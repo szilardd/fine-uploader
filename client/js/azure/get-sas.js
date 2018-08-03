@@ -49,11 +49,9 @@ qq.azure.GetSas = function(o) {
                                             
                     promise.success(sasData.sasUrl);
                 } else {
-                
-                        // fallback; only the sas is returned without expiration time
-                        promise.success(xhr.responseText);
+                    // fallback; only the sas is returned without expiration time
+                    promise.success(xhr.responseText);
                 }
-
             }
             else {
                 promise.failure("Empty response.", xhr);
