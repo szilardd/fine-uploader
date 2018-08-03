@@ -29,22 +29,31 @@ qq.azure.GetSas = function(o) {
         }
         else {
             if (xhr.responseText.length) {
+
+                var responseJson;
+
                 try {
-                    var response = JSON.parse(xhr.responseText);
-                    
+                    responseJson = JSON.parse(xhr.responseText);
+                } catch (error) {
+                    options.log(qq.format("Validity period not provided for SAS for file ID {}. SAS request will be sent for each chunk. JSON parse error: '{}'", params.id, error));
+                }
+
+                if (responseJson) {
                     var sasData = {
-                        sasUrl: response.sasUrl,
-                        validFor: response.validFor - 15, // extract 15 seconds from validity time to cater for latency between client and server
+                        sasUrl: responseJson.sasUrl,
+                        validFor: responseJson.validFor - 15, // extract 15 seconds from validity time to cater for latency between client and server
                         requestedAtTimestamp: parseInt((new Date().getTime()) / 1000) // current timestamp (in seconds)
                     };
                     
                     localStorage['qqazure_sas_' + params.blobUri] = JSON.stringify(sasData);
                                             
                     promise.success(sasData.sasUrl);
-                } catch (e) {
-                    // fallback; only the sas is returned without expiration time
-                    promise.success(xhr.responseText);
+                } else {
+                
+                        // fallback; only the sas is returned without expiration time
+                        promise.success(xhr.responseText);
                 }
+
             }
             else {
                 promise.failure("Empty response.", xhr);
