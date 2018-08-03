@@ -21,22 +21,37 @@ qq.azure.GetSas = function(o) {
 
     qq.extend(options, o);
 
-    function sasResponseReceived(id, xhr, isError) {
-        var promise = requestPromises[id];
+    function sasResponseReceived(params, xhr, isError) {
+        var promise = requestPromises[params.id];
 
         if (isError) {
             promise.failure("Received response code " + xhr.status, xhr);
         }
         else {
             if (xhr.responseText.length) {
-                promise.success(xhr.responseText);
+                try {
+                    var response = JSON.parse(xhr.responseText);
+                    
+                    var sasData = {
+                        sasUrl: response.sasUrl,
+                        validFor: response.validFor - 15, // extract 15 seconds from validity time to cater for latency between client and server
+                        requestedAtTimestamp: parseInt((new Date().getTime()) / 1000) // current timestamp (in seconds)
+                    };
+                    
+                    localStorage['qqazure_sas_' + params.blobUri] = JSON.stringify(sasData);
+                                            
+                    promise.success(sasData.sasUrl);
+                } catch (e) {
+                    // fallback; only the sas is returned without expiration time
+                    promise.success(xhr.responseText);
+                }
             }
             else {
                 promise.failure("Empty response.", xhr);
             }
         }
 
-        delete requestPromises[id];
+        delete requestPromises[params.id];
     }
 
     requester = qq.extend(this, new qq.AjaxRequester({
@@ -59,17 +74,36 @@ qq.azure.GetSas = function(o) {
             var requestPromise = new qq.Promise(),
                 restVerb = options.restRequestVerb;
 
-            options.log(qq.format("Submitting GET SAS request for a {} REST request related to file ID {}.", restVerb, id));
-
             requestPromises[id] = requestPromise;
 
-            requester.initTransport(id)
-                .withParams({
-                    bloburi: blobUri,
-                    _method: restVerb
-                })
-                .withCacheBuster()
-                .send();
+            var cachedSasData = localStorage['qqazure_sas_' + blobUri];
+            var sasUrl;
+
+            if (cachedSasData) {
+                cachedSasData = JSON.parse(cachedSasData);
+                var currentTimestamp = parseInt((new Date().getTime()) / 1000);
+                
+                // check if sas is valid based on timestamps
+                if (cachedSasData.validFor > (currentTimestamp - cachedSasData.requestedAtTimestamp)) {
+                    sasUrl = cachedSasData.sasUrl;
+                }
+            }
+            
+            if (sasUrl) {
+                options.log(qq.format("Ignoring GET SAS request for file ID {} because the previous request is still valid.", id));				
+                requestPromise.success(sasUrl);
+            } else {	
+                options.log(qq.format("Submitting GET SAS request for a {} REST request related to file ID {}.", restVerb, id));				
+                var params = { id: id, blobUri: blobUri };
+                requester.initTransport(params)
+                    .withParams({
+                        bloburi: blobUri,
+                        _method: restVerb
+                    })
+                    .withCacheBuster()
+                    .send();
+            }
+
 
             return requestPromise;
         }
